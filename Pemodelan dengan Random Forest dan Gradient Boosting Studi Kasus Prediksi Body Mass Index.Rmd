@@ -1,0 +1,853 @@
+---
+title: "Pemodelan dengan Random Forest dan Gradient Boosting Studi Kasus Prediksi
+  Body Mass Index"
+author: "Nazuwa Aulia"
+date: "2023-11-26"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Packages
+
+```{r}
+library(stringr)
+library(dplyr)
+library(caret)
+library(ranger)
+library(gbm)
+library(lime)
+library(MLmetrics)
+library(cowplot)
+library(skimr)
+library(randomForest)
+library(UBL)
+library(vcdExtra)
+library(ggplot2)
+```
+
+
+# Data
+
+```{r}
+dt.obes <- read.csv("C:/Users/Nazuwa Aulia/OneDrive/Documents/College/Semester 5/Pengantar Sains Data/Project UAS/obesitas tanpa 2 var.csv", stringsAsFactors = TRUE)
+head(dt.obes)
+```
+
+
+# Eksplorasi Data
+
+```{r}
+skimr::skim(dt.obes)
+```
+
+
+```{r}
+summary(dt.obes)
+```
+
+# Visualisasi Data
+
+## Sebaran Peubah Respon
+
+```{r}
+# Install paket jika belum diinstal
+if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
+  install.packages("RColorBrewer")
+}
+
+library(RColorBrewer)
+
+table_obes <- table(dt.obes$obesity)
+df_obes <- as.data.frame(table_obes)
+
+# Menggunakan palet warna "BrBG" untuk coklat tua dan coklat muda
+bar.ploty <- ggplot(df_obes, aes(x = Var1, y = Freq, fill = Var1)) +
+  geom_bar(stat = "identity", color = "white") +
+  geom_text(aes(label = Freq), vjust = -0.5, size = 3) +  
+  theme_minimal() +
+  labs(title = "Bar Plot of Body Mass Index", x = "Body Mass Index", y = "Total") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  scale_fill_brewer(palette = "BrBG")
+
+bar.ploty
+
+
+```
+
+Berdasarkan bar plot tersebut data cenderung imbalanced oleh karena itu pada analasis ini akan dilakukan perbandingan metode random forest dan gradient boosting pada masing-masing penanganan data yaitu undersampling, oversampling dan smote.
+
+## Sebaran Peubah Kategorik
+
+```{r}
+count_categoric_features <- function(x){
+  ggplot(dt.obes, aes_string(x = x)) +
+    geom_bar() + 
+    coord_flip()
+}
+
+plot_grid(
+  count_categoric_features("Gender"),
+  count_categoric_features("family_history_with_overweight"),
+  count_categoric_features("FAVC"),
+  count_categoric_features("CAEC"),
+  count_categoric_features("SMOKE"),
+  count_categoric_features("SCC"),
+  count_categoric_features("CALC"),
+  count_categoric_features("MTRANS"))
+```
+
+# Splitting Data
+
+```{r}
+set.seed(123)
+train_idx <- createDataPartition(dt.obes$obesity, p = 0.8, list=FALSE)
+trainData <- dt.obes[train_idx,]
+testData <- dt.obes[-train_idx,]
+```
+
+# Modeling
+
+Model prediksi menggunakan metode Random Forest dan Gradient Boosting. Pemilihan tuning parameter dilakukan menggunakan cross validation atau validasi silang terhadap data testing.
+
+K-fold cross validation adalah salah satu teknik validasi untuk mencari tuning parameter terbaik sekaligus mengevaluasi kinerja model. Pada studi kasus ini digunakan 5-fold cross validation. Data dipartisi secara acak ke dalam lima subset data. Secara bergantian masing-masing subset akan dijadikan sebagai data testing, sementara empat subset data lainnya sebagai data training.
+
+Pemodelan dilakukan dengan mencari Tuning Parameter dengan tuneLength. Opsi tuneLength pada fungsi caret::train akan memilih sejumlah tuning parameter atau kombinasi tuning parameter yang dianggap paling tepat sesuai dengan metode yang dipilih dan data training yang diberikan.
+
+```{r}
+set.seed(123)
+fitControl <- trainControl(
+  method = "cv",
+  number = 5,
+  returnResamp = "all")
+```
+
+## Tanpa Penanganan
+
+### Modeling 1: Random Forest
+
+#### Cross Validation
+
+```{r}
+set.seed(123)
+rf <- train(obesity ~ ., 
+            data = trainData,
+            method = 'ranger',
+            tuneLength = 10, 
+            importance = "impurity",
+            trControl = fitControl,
+            verbose = FALSE)
+rf
+```
+Hasil Validasi silang didapatkan plot sebagai berikut
+
+```{r}
+plot(rf, main = "5-Fold Cross Validation Random Forest Tanpa Penanganan: tuneLength")
+```
+
+```{r}
+rf_best <- rf$bestTune
+rf_best
+```
+
+Berdasarkan output di atas, tuning parameter terbaik adalah mtry = 6, splitrule = gini dan min.node.size = 1, yang memberikan nilai akurasi sebesar 0.8615299
+
+
+#### Re-Fit Model Menggunakan Tuning Parameter Terbaik
+
+Re-fit model terhadap seluruh data testing dengan menggunakan tuning parameter terbaik yang diperoleh pada tahap sebelumnya:
+
+```{r}
+set.seed(123)
+rf <- train(obesity ~ ., 
+            data = trainData,
+            method = 'ranger',
+            tuneGrid  = rf_best, 
+            importance = "impurity",
+            verbose = FALSE)
+rf
+```
+
+```{r}
+rf_result <- rf$results
+rf_result
+```
+
+Diperoleh model dengan Accuracy = 0.8360162 dan Kappa = 0.7575456
+
+#### Model (mtry=6)
+
+```{r}
+set.seed(123)
+rf_mod<-randomForest(obesity~., data = trainData, mtry=6)
+rf_mod
+```
+
+#### Evaluasi Terhadap data Test
+
+Untuk menguji kinerja model dalam memprediksi data baru, dilakukan evaluasi terhadap data testing
+
+```{r}
+eval_test_data <- function(model) {
+  pred <- predict(model, newdata = testData)
+  confusion_matrix <- confusionMatrix(pred, testData$obesity)
+  Accuracy <- confusion_matrix$overall["Accuracy"]
+  Kappa <- confusion_matrix$overall["Kappa"]
+  return(c(Accuracy, Kappa))
+}
+
+rf_eval <- eval_test_data(rf)
+rf_eval
+```
+
+Diperoleh model dengan Accuracy = 0.8337292
+
+#### Variable Importance
+
+```{r}
+plot(varImp(rf), 
+     main = "Random Forest Tanpa Penanganan Variable Importance" )
+```
+
+Berdasarkan output di atas, tiga peubah terpenting adalah Age,NCP, dan FCVC.
+
+### Modeling 2: Gradient Boosting
+
+Seperti Random Forest, pemilihan tuning parameter pada Gradient Boosting juga menggunakan 5-fold Cross-Validation.
+
+#### Cross Validation
+
+```{r}
+set.seed(123)
+boost <- train(obesity ~., 
+               data=trainData, 
+               method="gbm",
+               tuneLength = 10,  
+               trControl=fitControl,
+               verbose = FALSE)
+boost
+```
+
+Hasil validasi silang ditampilkan pada plot berikut:
+
+```{r}
+plot(boost, main = "5-Fold Cross Validation Gradient Boosting Tanpa Penanganan: tuneLength")
+```
+
+```{r}
+boost_best <- boost$bestTune
+boost_best
+```
+
+Berdasarkan output di atas, tuning parameter terbaik adalah n.trees = 450, interaction.depth = 10, shrinkage = 0.1 dan n.minobsinnode = 10, yang memberikan Accuracy =  0.8384669 dan Kappa = 0.7605633
+
+#### Re-Fit Model Menggunakan Tuning Parameter Terbaik
+
+```{r}
+set.seed(123)
+boost <- train(obesity ~., 
+               data=trainData, 
+               method="gbm",
+               tuneGrid  = boost_best,
+               verbose = FALSE)
+boost
+```
+
+```{r}
+boost_result <- boost$results
+boost_result
+```
+
+Diperoleh Accuracy = 0.8170163 dan Kappa = 0.7289344
+
+#### Evaluasi Terhadap Data Test
+
+```{r}
+boost_eval <- eval_test_data(boost)
+boost_eval
+```
+
+Diperoleh Accuracy sebesar 0.8408551
+
+#### Variable Importance
+
+```{r}
+plot(varImp(boost),
+     main = "Gradient Boosting Tanpa Penanganan Variable Importance" )
+```
+
+Berdasarkan output di atas, tiga peubah terpenting adalah Age,NCP dan FCVC.
+
+## Oversampling
+
+```{r}
+table(dt.obes$obesity)
+```
+
+```{r}
+# Upsample for multinomial classification
+set.seed(123)
+over_data <- upSample(x = trainData[, 1:14], y = trainData$obesity, yname = "obesity")
+table(over_data$obesity)
+```
+
+### Modeling 1: Random Forest
+
+#### Cross Validation
+
+```{r}
+set.seed(123)
+rf_over <- train(obesity ~ ., 
+            data = over_data,
+            method = 'ranger',
+            tuneLength = 10, 
+            importance = "impurity",
+            trControl = fitControl,
+            verbose = FALSE)
+rf_over
+```
+
+Hasil Validasi silang didapatkan plot sebagai berikut
+
+```{r}
+plot(rf_over, main = "5-Fold Cross Validation Random Forest Oversampling: tuneLength")
+```
+
+```{r}
+rf_over_best <- rf_over$bestTune
+rf_over_best
+```
+
+Berdasarkan output di atas, tuning parameter terbaik adalah mtry = 8, splitrule = extratrees  dan min.node.size = 1, yang memberikan nilai akurasi sebesar 0.9559743
+
+
+#### Re-Fit Model Menggunakan Tuning Parameter Terbaik
+
+Re-fit model terhadap seluruh data testing dengan menggunakan tuning parameter terbaik yang diperoleh pada tahap sebelumnya:
+
+```{r}
+set.seed(123)
+rf_over <- train(obesity ~ ., 
+            data = over_data,
+            method = 'ranger',
+            tuneGrid  = rf_over_best, 
+            importance = "impurity",
+            verbose = FALSE)
+rf_over
+```
+
+```{r}
+rf_over_result <- rf_over$results
+rf_over_result
+```
+
+Diperoleh model dengan Accuracy = 0.9371228 dan Kappa = 0.9161226
+
+#### Model (mtry=8)
+
+```{r}
+set.seed(123)
+rf_mod2<-randomForest(obesity~., data = over_data, mtry=8)
+rf_mod2
+```
+
+#### Evaluasi Terhadap data Test
+
+Untuk menguji kinerja model dalam memprediksi data baru, dilakukan evaluasi terhadap data testing
+
+```{r}
+rf_over_eval <- eval_test_data(rf_over)
+rf_over_eval
+```
+
+Diperoleh model dengan Accuracy = 0.8432304
+
+#### Variable Importance
+
+```{r}
+plot(varImp(rf_over), 
+     main = "Random Forest Oversampling Variable Importance" )
+```
+
+Berdasarkan output di atas, tiga peubah terpenting adalah Age,NCP, dan FCVC.
+
+### Modeling 2: Gradient Boosting
+
+#### Cross Validation
+
+```{r}
+set.seed(123)
+boost_over <- train(obesity ~., 
+               data=over_data, 
+               method="gbm",
+               tuneLength = 10,  
+               trControl=fitControl,
+               verbose = FALSE)
+boost_over
+```
+
+Hasil validasi silang ditampilkan pada plot berikut:
+
+```{r}
+plot(boost_over, main = "5-Fold Cross Validation Gradient Boosting Oversampling: tuneLength")
+```
+
+```{r}
+boost_over_best <- boost_over$bestTune
+boost_over_best
+```
+
+Berdasarkan output di atas, tuning parameter terbaik adalah n.trees = 500, interaction.depth = 9, shrinkage = 0.1 dan n.minobsinnode = 10, yang memberikan Accuracy =  0.9482644 dan Kappa = 0.9310195
+
+#### Re-Fit Model Menggunakan Tuning Parameter Terbaik
+
+```{r}
+set.seed(123)
+boost_over <- train(obesity ~., 
+               data=over_data, 
+               method="gbm",
+               tuneGrid  = boost_over_best,
+               verbose = FALSE)
+boost_over
+```
+
+```{r}
+boost_over_result <- boost_over$results
+boost_over_result
+```
+
+Diperoleh Accuracy = 0.9306612 dan Kappa = 0.9075024
+
+#### Evaluasi Terhadap Data Test
+
+```{r}
+boost_over_eval <- eval_test_data(boost_over)
+boost_over_eval
+```
+
+Diperoleh Accuracy sebesar 0.8551069
+
+#### Variable Importance
+
+```{r}
+plot(varImp(boost_over),
+     main = "Gradient Boosting Oversampling Variable Importance" )
+```
+Berdasarkan output di atas, tiga peubah terpenting adalah Age,CH20, dan NCP.
+
+## Undersampling
+
+```{r}
+set.seed(123)
+under_data <- downSample(x = trainData[, 1:14], y = trainData$obesity, yname = "obesity")
+table(under_data$obesity)
+```
+
+### Modeling 1: Random Forest
+
+#### Cross Validation
+
+```{r}
+set.seed(123)
+rf_under <- train(obesity ~ ., 
+            data = under_data,
+            method = 'ranger',
+            tuneLength = 10, 
+            importance = "impurity",
+            trControl = fitControl,
+            verbose = FALSE)
+rf_under
+```
+
+Hasil Validasi silang didapatkan plot sebagai berikut
+
+```{r}
+plot(rf_under, main = "5-Fold Cross Validation Random Forest Undersampling: tuneLength")
+```
+
+```{r}
+rf_under_best <- rf_under$bestTune
+rf_under_best
+```
+
+Berdasarkan output di atas, tuning parameter terbaik adalah mtry = 6, splitrule = gini dan min.node.size = 1, yang memberikan nilai akurasi sebesar 0.8220463
+
+#### Re-Fit Model Menggunakan Tuning Parameter Terbaik
+
+Re-fit model terhadap seluruh data testing dengan menggunakan tuning parameter terbaik yang diperoleh pada tahap sebelumnya:
+
+```{r}
+set.seed(123)
+rf_under <- train(obesity ~ ., 
+            data = under_data,
+            method = 'ranger',
+            tuneGrid  = rf_under_best, 
+            importance = "impurity",
+            verbose = FALSE)
+rf_under
+```
+
+```{r}
+rf_under_result <- rf_under$results
+rf_under_result
+```
+
+Diperoleh model dengan Accuracy = 0.8037875 dan Kappa = 0.7382724
+
+#### Model (mtry=6)
+
+```{r}
+set.seed(123)
+rf_mod3<-randomForest(obesity~., data = under_data, mtry=6)
+rf_mod3
+```
+
+#### Evaluasi Terhadap data Test
+
+Untuk menguji kinerja model dalam memprediksi data baru, dilakukan evaluasi terhadap data testing
+
+```{r}
+rf_under_eval <- eval_test_data(rf_under)
+rf_under_eval
+```
+
+Diperoleh model dengan Accuracy = 0.8123515
+
+#### Variable Importance
+
+```{r}
+plot(varImp(rf_under), 
+     main = "Random Forest Undersampling Variable Importance" )
+```
+
+Berdasarkan output di atas, tiga peubah terpenting adalah Age,NCP, dan FCVC.
+
+### Modeling 2: Gradient Boosting
+
+#### Cross Validation
+
+```{r}
+set.seed(123)
+boost_under <- train(obesity ~., 
+               data=under_data, 
+               method="gbm",
+               tuneLength = 10,  
+               trControl=fitControl,
+               verbose = FALSE)
+boost_under
+```
+
+Hasil validasi silang ditampilkan pada plot berikut:
+
+```{r}
+plot(boost_under, main = "5-Fold Cross Validation Gradient Boosting Undersampling: tuneLength")
+```
+
+```{r}
+boost_under_best <- boost_under$bestTune
+boost_under_best
+```
+
+Berdasarkan output di atas, tuning parameter terbaik adalah n.trees = 200, interaction.depth = 10, shrinkage = 0.1 dan n.minobsinnode = 10, yang memberikan Accuracy =  0.8082661 dan Kappa = 0.7443765
+
+#### Re-Fit Model Menggunakan Tuning Parameter Terbaik
+
+```{r}
+set.seed(123)
+boost_under <- train(obesity ~., 
+               data=under_data, 
+               method="gbm",
+               tuneGrid  = boost_under_best,
+               verbose = FALSE)
+boost_under
+```
+
+```{r}
+boost_under_result <- boost_under$results
+boost_under_result
+```
+
+Diperoleh Accuracy = 0.7842652 dan Kappa = 0.7122038
+
+#### Evaluasi Terhadap Data Test
+
+```{r}
+boost_under_eval <- eval_test_data(boost_under)
+boost_under_eval
+```
+
+Diperoleh Accuracy sebesar 0.7980998
+
+#### Variable Importance
+
+```{r}
+plot(varImp(boost_under),
+     main = "Gradient Boosting Undersampling Variable Importance" )
+```
+Berdasarkan output di atas, tiga peubah terpenting adalah Age,CH20, dan NCP.
+
+
+## SMOTE
+
+```{r}
+# smote for multinomial classification
+smote_data <- SmoteClassif(form = obesity ~ ., 
+                                dat = trainData, 
+                                C.perc = "balance",  
+                                dist = "HVDM")
+table(smote_data$obesity)
+```
+
+### Modeling 1: Random Forest
+
+#### Cross Validation
+
+```{r}
+set.seed(123)
+rf_smote <- train(obesity ~ ., 
+            data = smote_data,
+            method = 'ranger',
+            tuneLength = 10, 
+            importance = "impurity",
+            trControl = fitControl,
+            verbose = FALSE)
+rf_smote
+```
+
+Hasil Validasi silang didapatkan plot sebagai berikut
+
+```{r}
+plot(rf_smote, main = "5-Fold Cross Validation Random Forest SMOTE: tuneLength")
+```
+
+```{r}
+rf_smote_best <- rf_smote$bestTune
+rf_smote_best
+```
+
+Berdasarkan output di atas, tuning parameter terbaik adalah mtry = 6, splitrule = gini dan min.node.size = 1, yang memberikan nilai akurasi sebesar 0.8756062
+
+#### Re-Fit Model Menggunakan Tuning Parameter Terbaik
+
+Re-fit model terhadap seluruh data testing dengan menggunakan tuning parameter terbaik yang diperoleh pada tahap sebelumnya:
+
+```{r}
+set.seed(123)
+rf_smote <- train(obesity ~ ., 
+            data = smote_data,
+            method = 'ranger',
+            tuneGrid  = rf_smote_best, 
+            importance = "impurity",
+            verbose = FALSE)
+rf_smote
+```
+
+```{r}
+rf_smote_result <- rf_smote$results
+rf_smote_result
+```
+
+Diperoleh model dengan Accuracy = 0.8620146 dan Kappa = 0.8159554
+
+#### Model (mtry=6)
+
+```{r}
+set.seed(123)
+rf_mod4<-randomForest(obesity~., data = smote_data, mtry=6)
+rf_mod4
+```
+
+#### Evaluasi Terhadap data Test
+
+Untuk menguji kinerja model dalam memprediksi data baru, dilakukan evaluasi terhadap data testing
+
+```{r}
+rf_smote_eval <- eval_test_data(rf_smote)
+rf_smote_eval
+```
+
+Diperoleh model dengan Accuracy = 0.8313539
+
+#### Variable Importance
+
+```{r}
+plot(varImp(rf_smote), 
+     main = "Random Forest SMOTE Variable Importance" )
+```
+
+Berdasarkan output di atas, tiga peubah terpenting adalah Age,NCP, dan FCVC.
+
+### Modeling 2: Gradient Boosting
+
+#### Cross Validation
+
+```{r}
+set.seed(123)
+boost_smote <- train(obesity ~., 
+               data=smote_data, 
+               method="gbm",
+               tuneLength = 10,  
+               trControl=fitControl,
+               verbose = FALSE)
+boost_smote
+```
+
+Hasil validasi silang ditampilkan pada plot berikut:
+
+```{r}
+plot(boost_smote, main = "5-Fold Cross Validation Gradient Boosting SMOTE: tuneLength")
+```
+
+```{r}
+boost_smote_best <- boost_smote$bestTune
+boost_smote_best
+```
+
+Berdasarkan output di atas, tuning parameter terbaik adalah n.trees = 350, interaction.depth = 10, shrinkage = 0.1 dan n.minobsinnode = 10, yang memberikan Accuracy =  0.8572402 dan Kappa = 0.8096568
+
+#### Re-Fit Model Menggunakan Tuning Parameter Terbaik
+
+```{r}
+set.seed(123)
+boost_smote <- train(obesity ~., 
+               data=smote_data, 
+               method="gbm",
+               tuneGrid  = boost_smote_best,
+               verbose = FALSE)
+boost_smote
+```
+
+```{r}
+boost_smote_result <- boost_smote$results
+boost_smote_result
+```
+
+Diperoleh Accuracy = 0.8457748 dan Kappa = 0.7942514
+
+#### Evaluasi Terhadap Data Test
+
+```{r}
+boost_smote_eval <- eval_test_data(boost_smote)
+boost_smote_eval
+```
+Diperoleh Accuracy sebesar 0.8171021
+
+#### Variable Importance
+
+```{r}
+plot(varImp(boost_smote),
+     main = "Gradient Boosting SMOTE Variable Importance" )
+```
+Berdasarkan output di atas, tiga peubah terpenting adalah Age,CH20, dan NCP.
+
+
+# Komparasi Model
+
+Terdapat 8 model hasil dari Random Forest dan Gradient Boosting dari masing-masing data unbalanced yang belum ditangani, oversampling, undersampling dan SMOTE.
+
+```{r}
+eval_all <- matrix(c(rf_eval, rf_over_eval,rf_under_eval,rf_smote_eval, boost_eval, boost_over_eval,boost_under_eval,boost_smote_eval), nrow = 8, byrow = T)
+colnames(eval_all) <- names(rf_eval)
+row.names(eval_all) <- c("Random Forest Tanpa Penanganan", 
+                         "Random Forest Oversampling",
+                         "Random Forest Undersampling", 
+                         "Random Forest SMOTE", 
+                         "Gradient Boosting Tanpa Penanganan", 
+                         "Gradient Boosting Oversampling",
+                         "Gradient Boosting Undersampling",
+                         "Gradient Boosting SMOTE")
+eval_all
+```
+
+Berdasarkan hasil diatas dapat dilihat nilai accuracy paling tinggi diperoleh melalui metode Gradient Boosting Oversampling dengan nilai akurasi sebesar 0.8551069. Berdasarkan plot variable importance sebelumnya diperoleh tiga peubah terpenting dalam memprediksi body mass index adalah Age, CH20, dan NCP.
+
+# Confusion Matrix
+```{r}
+eval_test_data <- function(model) {
+  pred <- predict(model, newdata = testData)
+  
+  # Create a confusion matrix using the table function
+  confusion_matrix <- table(Actual = testData$obesity, Predicted = pred)
+  
+  # Display the confusion matrix
+  print("Confusion Matrix:")
+  print(confusion_matrix)
+  
+  # Calculate and display accuracy
+  accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+  cat("\nAccuracy:", accuracy, "\n")
+  
+  # Return accuracy and kappa
+  return(c(Accuracy = accuracy, Kappa = kappa))
+}
+
+# Call the function with your boost_over model
+evaluation_results <- eval_test_data(boost_over)
+```
+
+
+```{r}
+library(vcd)
+
+eval_test_data <- function(model) {
+  pred <- predict(model, newdata = testData)
+  
+  # Create a confusion matrix using the table function
+  confusion_matrix <- table(Actual = testData$obesity, Predicted = pred)
+  
+  # Display the confusion matrix
+  cat("Confusion Matrix:\n")
+  print(confusion_matrix)
+  
+  # Calculate and display accuracy
+  accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+  cat("\nAccuracy:", accuracy, "\n")
+  
+  # Calculate Cohen's Kappa
+  kappa_value <- Kappa(confusion_matrix)$value
+  
+  # Display and return accuracy and Cohen's Kappa
+  cat("Cohen's Kappa:", kappa_value, "\n")
+  return(list(Accuracy = accuracy, Kappa = kappa_value, Confusion_Matrix = confusion_matrix))
+}
+
+# Call the function with your boost_over model
+evaluation_results <- eval_test_data(boost_over)
+
+# Access the confusion matrix, accuracy, and kappa
+conf_matrix <- evaluation_results$Confusion_Matrix
+accuracy <- evaluation_results$Accuracy
+kappa <- evaluation_results$Kappa
+
+```
+
+# Importance Variable
+
+```{r}
+library(caret)
+
+ht.vip <- varImp(boost_smote)
+ht.vip1 <- data.frame(Variable = c("Age","CH2O","NCP","FCVC","FAF","TUE","Family History"),
+                      Importance = c(1.000000e+02, 5.740982e+01, 5.179230e+01,
+                                     4.863681e+01, 4.504884e+01, 3.829875e+01,
+                                     2.829866e+01))
+
+ht.vipl<-ggplot(ht.vip1, aes(x=reorder(Variable,Importance), y=Importance, fill=Importance))+
+  geom_bar(stat="identity")+coord_polar("x",start=0)+
+  theme(axis.title.x.bottom = element_blank(),
+                         axis.title.y.left = element_blank(),
+                         axis.text.y.left = element_blank(),
+                         axis.text.x = element_text(size=13),
+                         text=element_text(size=12))+
+  scale_fill_gradientn(colours=c("orange","#0c134f"));ht.vipl
+
+```
+

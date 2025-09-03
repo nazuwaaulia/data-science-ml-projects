@@ -1,0 +1,93 @@
+---
+title: "Scrapping Web"
+author: "Nazuwa Aulia"
+date: "2023-08-30"
+output: html_document
+---
+
+```{r}
+library(rvest)
+```
+
+
+```{r}
+url <- "https://www.carsome.id/beli-mobil-bekas"
+card <- read_html(url) %>% html_elements('.mod-card')
+card %>% 
+  html_element('.mod-card__high-tag-list') %>% 
+  html_elements('span') %>% 
+  html_text() %>% 
+  paste(collapse = ',')
+```
+
+
+```{r}
+sapply(card,
+         function(card){
+           card %>% 
+             html_element('.mod-card__high-tag-list') %>% 
+             html_elements('span') %>% 
+             html_text() %>% 
+             paste(collapse = ',')
+         })
+```
+
+
+```{r}
+library(knitr)
+url <- paste("https://www.carsome.id/beli-mobil-bekas?pageNo=",1,sep="")
+card <- read_html(url) %>% html_elements('.mod-card')
+Detail<-sapply(card,
+               function(card){
+                 card %>% 
+                   html_element('.mod-card__high-tag-list') %>% 
+                   html_elements('span') %>% 
+                   html_text() %>% 
+                   paste(collapse = ',')
+               })
+Harga.Kredit.Diskon<-card %>% 
+  html_element('.mod-card__price__total')%>%
+  html_element("strong")%>%html_text2()
+Harga.Cash.Diskon<-card %>% 
+  html_element('.mod-card__price-cash')%>%html_text2()
+Cicil<-card %>% 
+  html_element('.mod-tooltipMonthPay')%>%
+  html_element("div")%>%html_text2()
+Nama<-card %>% 
+  html_element('a.mod-card__title')%>%html_text2()%>%gsub("\n","",.)
+data<-cbind(Nama,Harga.Kredit.Diskon,Harga.Cash.Diskon,Cicil,
+            Detail);kable(head(data,15),caption="Tabel 1. Hasil Scraping Page 1")
+```
+
+
+```{r}
+url <- paste("https://www.carsome.id/beli-mobil-bekas?pageNo=",1,sep="")
+card <- read_html(url) %>% html_elements('.mod-card')
+Detail<-sapply(card,
+               function(card){
+                 card %>% 
+                   html_element('.mod-card__high-tag-list') %>% 
+                   html_elements('span') %>% 
+                   html_text() %>% 
+                   paste(collapse = ',')
+               })
+Harga.Kredit.Diskon<-card %>% 
+  html_element('.mod-card__price__total')%>%
+  html_element("strong")%>%html_text2()
+Harga.Cash.Diskon<-card %>% 
+  html_element('.mod-card__price-cash')%>%html_text2()
+Cicil<-card %>% 
+  html_element('.mod-tooltipMonthPay')%>%
+  html_element("div")%>%html_text2()
+Nama<-card %>% 
+  html_element('a.mod-card__title')%>%html_text2()%>%gsub("\n","",.)
+data<-cbind(Nama,Harga.Kredit.Diskon,Harga.Cash.Diskon,Cicil,
+            Detail);kable(head(data,15),caption="Tabel 1. Hasil Scraping Page 1")
+kable(head(df,15),caption="Tabel 2. Hasil Scraping Page 1-10")
+```
+
+
+```{r}
+kable(head(df,15),caption="Tabel 2. Hasil Scraping Page 1-10")
+```
+

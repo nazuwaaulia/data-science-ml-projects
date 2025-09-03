@@ -1,0 +1,366 @@
+---
+title: "Perbandingan SVM dan XGboost dalam Studi Kasus Pima Indians Diabetes"
+author: "Nazuwa Aulia"
+date: "2024-06-06"
+output:
+  rmdformats::downcute:
+    self_contained: true
+    default_style: "light"
+    downcute_theme: "default"
+    code_folding: show
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Library
+
+```{r}
+library(ISLR)
+library(caret)
+library(xgboost)
+library(UBL)
+library(pROC)
+library(ggplot2)
+library(e1071)
+```
+
+# Data
+
+Data yang digunakan pada penelitian ini adalah data kondisi kesehatan 768 wanita suku Indian Pima usia 21 tahun ke atas. Data ini merupakan data sekunder yang diperoleh dari laman Kaggle. Rincian peubah respon dan peubah penjelas yang digunakan tertera tabel dibawah ini :\
+
+| Peubah | Keterangan                 | Satuan   | Sumber Pustaka                |
+|--------|----------------------------|----------|-------------------------------|
+| Y      | Diabetes melitus           | 0 atau 1 |                               |
+| X1     | Jumlah kehamilan           |          | Yanti dan Surtiningsih (2016) |
+| X2     | Kadar glukosa              | mg/dL    | Perkeni (2021)                |
+| X3     | Tekanan darah              | mm Hg    | Ekasari et al. (2021)         |
+| X4     | Ketebalan trisep           | mm       | Collier et al. (1989)         |
+| X5     | Insulin                    | μU/mL    | Wilcox (2005)                 |
+| X6     | IMT                        | kg/m2    | Adnan et al. (2013)           |
+| X7     | Diabetes Pedigree Function |          | Joshi et al. (2021)           |
+| X8     | Usia                       | Tahun    | Yan et al. (2023)             |
+
+```{r}
+dt.tpm <- read.csv("diabetes.csv")
+dt.tpm$outcome <- as.factor(dt.tpm$outcome)
+```
+
+# Eksplorasi Data dan Pre-processing
+
+```{r}
+head(dt.tpm)
+```
+
+Terdapat peubah yang bernilai 0 padahal tidak mungkin peubah tersebut nilainya 0
+
+```{r}
+skimr::skim(dt.tpm)
+```
+
+pada data tidak terlihat adanya missing value namun pada eksplorasi awal terdapat beberapa peubah bernilai 0 padahal seharusnya tidak mungkin peubah tersebut bernilai 0 sehingga hal ini mengindikasikan adanya missing value sehingga nilai 0 akan diganti dengan NaN
+
+```{r}
+cols_to_replace <- c('glucose', 'bloodpressure', 'skinthickness', 'insulin', 'bmi')
+dt.tpm[cols_to_replace] <- lapply(dt.tpm[cols_to_replace], function(x) ifelse(x == 0, NA, x))
+
+head(dt.tpm)
+```
+
+Pada data yang hilang akan dilakukan imputasi menggunakan nilai median dari peubah tersebut
+
+```{r}
+dt.tpm[cols_to_replace] <- lapply(dt.tpm[cols_to_replace], function(x) {
+  x[is.na(x)] <- median(x, na.rm = TRUE)
+  return(x)
+})
+
+head(dt.tpm)
+```
+
+Satuan dari setiap peubah berbeda - beda, oleh karena itu Selanjutnya akan dilakukan proses standarisasi data
+
+```{r}
+# Memilih kolom-kolom numerik yang akan distandarisasi
+numeric_columns <- sapply(dt.tpm, is.numeric)
+selected_data <- dt.tpm[, numeric_columns]
+
+# Standarisasi data
+scaled_data <- scale(selected_data)
+
+# Gantikan kolom numerik pada data awal dengan data yang sudah distandarisasi
+dt.tpm[, numeric_columns] <- scaled_data
+
+head(dt.tpm)
+```
+
+```{r}
+table_diabet <- table(dt.tpm$outcome)
+df_diabet <- as.data.frame(table_diabet)
+
+bar.ploty <- ggplot(df_diabet, aes(x = Var1, y = Freq, fill = Var1)) +
+  geom_bar(stat = "identity", color = "white") +
+  geom_text(aes(label = Freq), vjust = -0.5, size = 3) +  
+  theme_minimal() +
+  labs(title = "Bar Plot of Outcome Diabetes", x = "Outcome Diabetes", y = "Total") +
+  theme(axis.text.x = element_text(angle = 360, hjust = 1))
+
+bar.ploty
+```
+
+Terlihat bahwa class data tidak seimbang sehingga nanti akan dilakukan penanganan data tidak seimbang pada data latih (train)
+
+# Splitting Data
+
+```{r}
+set.seed(123)
+train_idx <- createDataPartition(dt.tpm$outcome, p = 0.8, list=FALSE)
+train.data <- dt.tpm[train_idx,]
+test.data <- dt.tpm[-train_idx,]
+```
+
+# Penanganan Imbalance Data
+
+Imbalance data akan ditangani dengan Synthetic Minority Over-sampling Technique (SMOTE). SMOTE adalah metode untuk mengatasi masalah data tidak seimbang dalam machine learning. Ketika satu kelas memiliki jauh lebih sedikit contoh dibandingkan kelas lain, model cenderung mengabaikan kelas minoritas. SMOTE meningkatkan jumlah contoh kelas minoritas dengan membuat data sintetis. Teknik ini bekerja dengan mengidentifikasi contoh dari kelas minoritas, memilih tetangga terdekat, dan membuat contoh baru dengan menginterpolasi antara contoh asli dan tetangganya. Dengan demikian, SMOTE membantu menciptakan dataset yang lebih seimbang dan meningkatkan kemampuan model untuk mengenali kelas minoritas.
+
+```{r}
+smote_data <- SmoteClassif(form = outcome ~ ., 
+                           dat = train.data, 
+                           C.perc = "balance",  
+                           dist = "HVDM")
+
+# Melihat distribusi kelas setelah SMOTE
+table(smote_data$outcome)
+```
+
+# SVM
+
+Support vector machine (SVM) merupakan salah satu teknik pembelajaran mesin yang digunakan untuk analisis prediksi, baik dalam bentuk klasifikasi maupun regresi. SVM pada dasarnya berprinsip linear classifier, yaitu teknik klasifikasi untuk data yang dapat dipisahkan secara linear (Santosa 2007). Namun, kini SVM telah dikembangkan sehingga juga mampu menyelesaikan permasalahan klasifikasi untuk data yang tidak linear dengan menerapkan konsep kernel pada ruang kerja berdimensi tinggi. SVM dilakukan dengan mencari hyperplane (bidang pembatas) yang memaksimalkan jarak antar kelas (Octaviani et al. 2014). Penggunaan kernel bertujuan untuk mentransformasikan data ke ruang berdimensi tinggi,dengan menjadikan data non linear terpisah secara linear.
+
+## SVM Dengan Kernel Linear
+
+SVM dengan kernel linear adalah versi sederhana dari SVM yang menggunakan fungsi linear untuk memisahkan kelas-kelas dalam data. Kernel linear berarti bahwa keputusan yang diambil oleh SVM adalah berdasarkan garis lurus (untuk data dua dimensi), atau hyperplane (untuk data dengan lebih banyak dimensi), yang memisahkan kelas-kelas dalam ruang fitur.
+
+```{r}
+# 10 fold cross validation
+ctr <- trainControl(method='repeatedcv',
+                    number=10,
+                    repeats=3)
+
+# Recall as C increases, the margin tends to get wider
+grid <- data.frame(C=seq(0.01,10,0.5))
+
+svm.linear <- train(outcome ~., smote_data,
+                 method='svmLinear',
+                 preProc=c('center','scale'),
+                 trControl=ctr,
+                 tuneGrid=grid)
+svm.linear
+```
+
+```{r}
+svm.linear$bestTune
+```
+
+```{r}
+ggplot(svm.linear)
+```
+
+```{r}
+# Training error rate
+confusionMatrix(predict(svm.linear, smote_data), smote_data$outcome)
+```
+
+```{r}
+# Testing error rate
+yhat_1 <- predict(svm.linear, test.data)
+svm.lin.acc <- confusionMatrix(yhat_1, test.data$outcome)
+svm.lin.acc
+```
+
+Dengan menggunakan metode SVM dengan kernel linear diperoleh nilai akurasi sebesar 0.8039
+
+## SVM dengan Kernel Polinomial
+
+SVM dengan kernel polinomial adalah variasi dari algoritma SVM yang menggunakan fungsi kernel polinomial untuk memetakan data ke ruang fitur yang lebih tinggi. Kernel polinomial memungkinkan SVM untuk menangani masalah klasifikasi yang tidak dapat dipisahkan secara linear dengan menambahkan fleksibilitas dalam pemisahan data. Kernel polinomial adalah fungsi kernel yang mendefinisikan kesamaan antara dua contoh data dalam ruang fitur yang lebih tinggi yang dibentuk oleh kombinasi polinomial dari fitur asli.
+
+```{r}
+set.seed(123)
+svm.poly <- train(outcome ~., smote_data,
+                 method='svmPoly',
+                 trControl=ctr,
+                 tuneLength=4)
+                 
+svm.poly
+```
+
+```{r}
+svm.poly$bestTune
+```
+
+```{r}
+plot(svm.poly)
+```
+
+```{r}
+# Training error rate
+confusionMatrix(predict(svm.poly, smote_data), smote_data$outcome)
+```
+
+```{r}
+# Testing error rate
+yhat_2 <- predict(svm.poly, test.data)
+svm.poli.acc <- confusionMatrix(yhat_2, test.data$outcome)
+svm.poli.acc
+```
+
+Dengan menggunakan metode SVM dengan kernel polinomial diperoleh nilai akurasi sebesar 0.7451
+
+## SVM dengan Kernel Radial
+
+SVM dengan kernel radial basis function (RBF), juga dikenal sebagai kernel Gaussian, adalah varian dari SVM yang menggunakan fungsi kernel RBF untuk memetakan data ke ruang fitur yang lebih tinggi. Kernel RBF sangat populer karena kemampuannya untuk menangani dataset yang tidak dapat dipisahkan secara linear dengan lebih baik. Kernel RBF adalah fungsi yang mengukur kesamaan antara dua contoh data dalam ruang fitur yang lebih tinggi, menggunakan jarak Euclidean antara dua vektor.
+
+```{r}
+set.seed(123)
+
+svm.radial <- train(outcome ~., smote_data,
+                 method='svmRadial',
+                 trControl=ctr,
+                 tuneLength=10)
+svm.radial
+```
+
+```{r}
+svm.radial$bestTune
+```
+
+```{r}
+plot(svm.radial)
+```
+
+```{r}
+# Training error rate
+confusionMatrix(predict(svm.radial, smote_data), smote_data$outcome)
+```
+
+```{r}
+# Testing error rate
+yhat_3 <- predict(svm.radial, test.data)
+svm.rad.acc <- confusionMatrix(yhat_3, test.data$outcome)
+svm.rad.acc
+```
+
+Dengan menggunakan metode SVM dengan kernel radial diperoleh nilai akurasi sebesar 0.7843
+
+# XGBoost
+
+XGBoost adalah algoritma yang berbasis pada metode boosting, di mana beberapa model prediksi (biasanya pohon keputusan) digabungkan untuk membentuk model yang lebih kuat. Setiap model baru mencoba untuk memperbaiki kesalahan dari model sebelumnya dengan menambahkan bobot lebih pada kesalahan prediksi.
+
+```{r}
+set.seed(123)
+# Definisikan kontrol untuk 10-fold cross-validation yang diulang 3 kali
+ctr <- trainControl(method = 'repeatedcv',
+                    number = 10,
+                    repeats = 3,
+                    verboseIter = TRUE)
+
+# Definisikan grid parameter untuk tuning
+grid <- expand.grid(
+  nrounds = 500,        # Jumlah boosting rounds
+  max_depth = 10,       # Kedalaman maksimum setiap pohon
+  eta = 0.1,            # Learning rate
+  gamma = 5,            # Minimum loss reduction
+  colsample_bytree = 0.7,  # Proporsi fitur yang diambil secara acak
+  min_child_weight = 1,    # Minimum sum of instance weight (hessian) needed in a child
+  subsample = 0.7          # Proporsi data yang diambil secara acak untuk setiap pohon
+)
+
+set.seed(123)
+# Melatih model menggunakan XGBoost
+xgb_model <- train(outcome ~ ., data = smote_data,
+                   method = 'xgbTree',
+                   trControl = ctr,
+                   tuneGrid = grid,
+                   preProcess = c('center', 'scale'))
+
+
+xgb_model
+```
+
+```{r}
+yhat_4 <- predict(xgb_model, newdata = test.data)
+
+xgb.acc <- confusionMatrix(yhat_4, test.data$outcome)
+xgb.acc
+```
+
+Dengan menggunakan metode XGBoost diperoleh nilai akurasi sebesar 0.8497
+
+# Evaluasi Model
+
+Pada evaluasi model, metrik evaluasi yang digunakan adalah accuracy, presisi, recall dan F1 Score.
+
+-   Akurasi (Accuracy), mengukur sejauh mana model secara keseluruhan dapat melakukan prediksi dengan benar.
+
+-   Presisi (Precision), mengukur sejauh mana prediksi positif yang dibuat oleh model adalah benar.
+
+-   Recall (juga dikenal sebagai Sensitivitas), mengukur sejauh mana model berhasil mendeteksi semua contoh positif yang sebenarnya.
+
+-   F1-Score adalah ukuran gabungan dari presisi dan recall yang mencoba memberikan gambaran keseluruhan kinerja model.
+
+```{r}
+# Fungsi untuk menghitung metrik evaluasi
+calculate_metrics <- function(model, test.data) {
+  # Prediksi
+  predictions <- predict(model, test.data)
+  prob_predictions <- predict(model, test.data, type = "prob")
+  
+  # Confusion Matrix
+  conf_matrix <- confusionMatrix(predictions, test.data$outcome)
+  
+  # Accuracy
+  accuracy <- conf_matrix$overall['Accuracy']
+  
+  # Precision, Recall, F1 Score
+  precision <- posPredValue(predictions, test.data$outcome)
+  recall <- sensitivity(predictions, test.data$outcome)
+  f1 <- F_meas(predictions, test.data$outcome)
+  
+  return(list(accuracy = accuracy, precision = precision, recall = recall, f1 = f1, conf_matrix = conf_matrix))
+}
+
+# Menghitung metrik evaluasi untuk semua model
+svm.lin.acc <- calculate_metrics(svm.linear, test.data)
+svm.poly.acc <- calculate_metrics(svm.poly, test.data)
+svm.rad.acc <- calculate_metrics(svm.radial, test.data)
+xgb.acc <- calculate_metrics(xgb_model, test.data)
+```
+
+```{r}
+eval_all <- matrix(
+  c(
+    svm.lin.acc$accuracy, svm.lin.acc$precision, svm.lin.acc$recall, svm.lin.acc$f1,
+    svm.poly.acc$accuracy, svm.poly.acc$precision, svm.poly.acc$recall, svm.poly.acc$f1,
+    svm.rad.acc$accuracy, svm.rad.acc$precision, svm.rad.acc$recall, svm.rad.acc$f1,
+    xgb.acc$accuracy, xgb.acc$precision, xgb.acc$recall, xgb.acc$f1
+  ), 
+  nrow = 4, byrow = TRUE
+)
+colnames(eval_all) <- c("Accuracy", "Precision", "Recall", "F1 Score")
+row.names(eval_all) <- c("SVM Linear", "SVM Polynomial", "SVM Radial", "XGBoost")
+eval_all <- as.data.frame(eval_all)
+
+print(eval_all)
+```
+
+Berdasarkan output diatas dapat dilihat bahwa model XGBoost merupakan model terbaik dibandingkan dengan SVM dengan accuracy sebesar 84.96%, presisi sebesar 91.39%, recall sebesar 85% dan F1 Score sebesar 88%.
+
+# Importance Variable
+
+```{r}
+plot(varImp(xgb_model), 
+     main = "XGBoost Variable Importance" )
+```
+
+Berdasarkan plot variable importance diatas dapat dilihat bahwa 3 peubah yang paling berpengaruh terhadap diabetes adalah kadar glukosa, indeks massa tubuh dan usia.

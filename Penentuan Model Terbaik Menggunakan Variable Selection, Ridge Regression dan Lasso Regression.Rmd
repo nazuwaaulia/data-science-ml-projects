@@ -1,0 +1,250 @@
+---
+title: "Penentuan Model Terbaik Menggunakan Variable Selection, Ridge Regression dan Lasso Regression"
+author: "Nazuwa Aulia"
+date: "2023-09-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Library yang digunakan
+
+```{r}
+library(readxl)
+library(stats)
+library(base)
+library(dplyr)
+library(corrplot)
+library(ggplot2)
+library(GGally)
+library(car)
+library(lmtest)
+library(randtests)
+library(MASS)
+library(glmnet)
+library(lmridge)
+```
+
+# Import data yang digunakan
+
+Data yang digunakan bersumber dari kaggle dengan judul Student Performance. Terdapat total 10000 data namun pada analisis ini hanya 1000 data yang digunakan. Adapun peubah bebas yang digunakan sebanyak 4.
+
+**Peubah Bebas (X)**
+
+*Hours Studied* (X1), jumlah total jam yang dihabiskan siswa untuk belajar. *Previous Score* (X2), nilai yang diperoleh siswa dalam tes sebelumnya. *Sleep Hours* (X3), jumlah rata-rata jam tidur yang dimiliki siswa per hari. *Sample Question Papers Practiced* (X4), jumlah soal latihan yang dikerjakan oleh siswa.
+
+**Peubah Respon (Y)**
+
+*Performance Index*, ukuran kinerja keseluruhan setiap siswa. Indeks kinerja menggambarkan kinerja akademik siswa dan telah dibulatkan ke bilangan bulat terdekat. Indeks ini berkisar dari 10 hingga 100, dengan nilai yang lebih tinggi menunjukkan kinerja yang lebih baik.
+
+```{r}
+datapsd <- read_excel("C:/Users/Nazuwa Aulia/OneDrive/Documents/College/Semester 5/Pengantar Sains Data/student performance.xlsx", sheet = "Sheet2")
+datapsd
+
+str(datapsd)
+```
+
+# Eksplorasi Data
+
+```{r}
+summary(datapsd)
+```
+
+## Korelasi Peubah
+
+### Pair plot
+
+```{r}
+ggpairs(datapsd)
+```
+
+Plot pair diatas menunjukkan menunjukkan hubungan antar peubah. Pada tabel nilai korelasi terdapat tanda bintang (\*) yang menandakan adanya hubungan linier yang kuat atau signifikan dengan peubah respons, yaitu X1 dan X2. Meskipun nilai korelasi cenderung lemah, tidak ada peubah penjelas yang dieliminasi pada model awal karena akan dilakukan variable selection untuk melihat model terbaik.
+
+### Matriks korelasi untuk setiap peubah numerik
+
+```{r}
+corr_matx <- datapsd %>% select_if(is.numeric) %>% cor() %>% round(3)
+corr_matx
+```
+
+```{r}
+corrplot(corr_matx, 
+         method = "color", 
+         type = "lower", 
+         tl.cex = 0.5, 
+         tl.col = "black",
+         addCoef.col = "#2F2F2F",
+         addCoefasPercent = FALSE,
+         number.cex = 0.5,
+         diag=F)
+```
+
+# Model Regresi Linear Berganda
+
+```{r}
+model.reg <- lm(y ~., data = datapsd)
+summary(model.reg)
+```
+
+Model regresi linear berganda yang diperoleh adalah :
+
+$$
+\hat{y}=-33.816104+2.829452X_{1}+1.021915X_{2}+0.461903X_{i}+0.197141 X_{4}
+$$ Selain itu dapat dilihat nilai *Multiple R-squared* yang diperoleh sebesar 0.9892
+
+# Pendeteksian Multikolinearitas
+
+```{r}
+car::vif(model.reg)
+```
+
+Multikolinieritas terdeteksi apabila nilai VIF lebih dari 10. Pada output diatas dapat dilihat bahwa hasil semua nilai VIF untuk setiap peubah kurang dari 10. Artinya, tidak ada multikolinieritas pada setiap peubah penjelas.
+
+# Uji Asumsi
+
+## Harapan Sisaan = 0
+
+```{r}
+plot(model.reg,1, pch=20)
+
+t.test(model.reg$residuals,mu = 0,conf.level = 0.95)
+```
+
+Nilai *p-value* = 1 \> 0.05 sehingga tak tolak H0 artinya nilai harapan sisaan = 0. Secara eksploratif juga dapat dilihat pada plot dimana sebagian besar sisaan berada di sekitar 0. Sehingga dapat disimpulkan bahwa terdapat cukup bukti untuk menyatakan nilai harapan sisaan = 0 dan **asumsi terpenuhi**
+
+## Kehomogenan Sisaan
+
+```{r}
+plot(model.reg,1, pch=20)
+
+
+bptest(model.reg)
+```
+
+Nilai *p-value* = 0.4957 \> 0.05 sehingga tak tolak H0 artinya ragam sisaan homogen. Secara eksploratif juga dapat dilihat pada plot dimana lebar pita sama untuk setiap nilai dugaan dan tidak membentuk seperti corong. Sehingga dapat disimpulkan bahwa terdapat cukup bukti untuk menyatakan ragam sisaan homogen dan **asumsi terpenuhi**
+
+## Kesalingbebasan Sisaan
+
+```{r}
+plot(x = 1:dim(datapsd)[1],
+     y = model.reg$residuals,
+     type = 'b', 
+     ylab = "Residuals",
+     xlab = "Observation", pch=20)
+
+dwtest(model.reg)
+
+
+runs.test(model.reg$residuals)
+```
+
+Nilai *p-value* = 0.3592 \> 0.05 sehingga tak tolak H0 artinya sisaan saling bebas dan tidak terdapat autokorelasi. Secara eksploratif juga dapat dilihat pada plot dimana sisaan menyebar tak berpola, sehingga asumsi sisaan saling bebas terpenuhi. Sehingga dapat disimpulkan bahwa terdapat cukup bukti untuk menyatakan sisaan saling bebas dan **asumsi terpenuhi**
+
+## Normalitas Sisaan
+
+```{r}
+plot(model.reg,2,pch=20)
+ks.test(model.reg$residuals, "pnorm", mean=mean(model.reg$residuals), sd=sd(model.reg$residuals))
+```
+
+Nilai *p-value* = 0.7479 \> 0.05 sehingga tak tolak H0 artinya sisaan menyebar normal. Secara eksploratif juga dapat dilihat pada plot dimana banyak amatan telah mendekati garis qq-plot normal, sehingga asumsi sisaan menyebar normal terpenuhi. Sehingga dapat disimpulkan bahwa terdapat cukup bukti untuk menyatakan sisaan menyebar normal dan **asumsi terpenuhi**
+
+# Variable Selection
+
+## Forward Selection
+
+```{r}
+forward_model <- stepAIC(model.reg, direction = "forward")
+```
+
+## Backward Selection
+
+```{r}
+backward_model <- step(model.reg, direction = "backward")
+```
+
+## Stepwise Selection
+
+```{r}
+stepwise_model <- stepAIC(model.reg, direction = "both")
+```
+
+# Ridge Regression (glmnet)
+
+```{r}
+x<-data.matrix(datapsd[, c('x1', 'x2', 'x3', 'x4')])
+y<-datapsd$y
+```
+
+## CV
+
+```{r}
+cv.r<-cv.glmnet(x,y,alpha=0);plot(cv.r)
+```
+
+## Best Model
+
+```{r}
+best.lr<-cv.r$lambda.min
+bestridge<-glmnet(x,y,alpha=0,lambda=best.lr);coef(bestridge)
+```
+
+## R-Square
+
+```{r}
+rsq<-function(bestmodel,bestlambda,x,y){
+ #y duga
+ y.duga <- predict(bestmodel, s = bestlambda, newx = x)
+
+ #JKG dan JKT
+ jkt <- sum((y - mean(y))^2)
+ jkg <- sum((y.duga- y)^2)
+
+#find R-Squared
+rsq <- 1 - jkg/jkt
+return(rsq) 
+}
+```
+
+## R-Square Ridge
+
+```{r}
+rsq(bestridge,best.lr,x,y)
+```
+
+# Lasso Regression
+
+## CV
+
+```{r}
+cv.l<-cv.glmnet(x,y,alpha=1);plot(cv.l)
+```
+
+## Best Model
+
+```{r}
+best.ll<-cv.l$lambda.min
+bestlasso<-glmnet(x,y,alpha=1,lambda=best.ll);coef(bestlasso)
+```
+
+## R-Squared Lasso
+
+```{r}
+rsq(bestlasso,best.ll,x,y)
+```
+
+# Ridge Regression (lmridge)
+
+```{r}
+lmr<-lmridge(y~.,datapsd,scaling="centered");plot(lmr);vif(lmr)
+```
+
+```{r}
+summary(lmr)
+```
+
+# Kesimpulan
+
+Berdasarkan hasil analisis yang dilakukan melalui *variable selection*, *ridge regression* dan *lasso regression* model terbaik yang dihasilkan merupakan model awal yang memiliki 4 peubah bebas dengan nilai *R-Squared* nya sebesar 98.92%

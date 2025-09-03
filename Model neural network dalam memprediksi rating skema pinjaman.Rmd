@@ -1,0 +1,216 @@
+---
+title: "Tugas Individu TPM"
+author: "Nazuwa Aulia (G1401211033)"
+date: "2024-02-25"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Library
+
+```{r}
+library(keras)
+library(caret)
+library (dplyr)
+library(tensorflow)
+library(tidyverse)
+library(knitr)
+```
+
+# Pendahuluan
+
+Artificial Neural Network (ANN) adalah pendekatan komputasi yang bertujuan meniru proses transfer informasi otak manusia. Biasanya, ANN adalah teknik yang digunakan ketika hubungan antara input dan output sangat kompleks dan nonlinier (Garrett 1994). Secara umum, model Neural Network terdiri dari input layer, hidden layer, dan output layer dengan fungsi aktivasi di dalamnya. Metode ini menggunakan algoritma untuk membuat prediksi atau klasifikasi pada data input hingga mendapatkan output yang menggambarkan keadaan yang sebenarnya dengan akurat (Nielsen 2015).
+
+# Data
+
+```{r}
+data.ann <- read.csv("C:/Users/Nazuwa Aulia/OneDrive/Documents/College/Semester 6/Teknik Pembelajaran Mesin/Pertemuan 5/data ann.csv")
+
+head(data.ann)
+```
+
+## Eksplorasi Data
+
+```{r}
+str(data.ann)
+```
+
+Data terdiri dari 75 amatan dengan semua peubah bersifat numerik. 6 peubah pada data terdiri dari 5 peubah penjelas dan 1 peubah respon. Peubah penjelas yang digunakan adalah sebagai berikut :
+
+-   Besar pinjaman (dalam juta rupiah)
+
+-   Lama pembayaran (dalam tahun)
+
+-   Tambahan bunga yang ditetapkan (dalam %)
+
+-   Pembayaran per bulan (dalam 10000)
+
+-   Banyak cash back yang diterapkan pada skema tersebut
+
+```{r}
+summary(data.ann)
+```
+
+Dengan menggunakan fungsi summary dapat dilihat sebaran data secara umum.
+
+## Pengecekan Missing Value
+
+```{r}
+colSums(is.na(data.ann))
+```
+
+dengan menggunakan fungsi is.na dapat dilihat pada output diatas bahwa tidak terdapat missing value pada data.
+
+## Sebaran Peubah
+
+```{r}
+par(mfrow=c(3, 3))
+
+hist(data.ann$besar.pinjaman, main="Histogram Besar Pinjaman", xlab="Besar Pinjaman")
+hist(data.ann$lama.pembayaran, main="Histogram Lama Pembayaran", xlab="Lama Pembayaran")
+hist(data.ann$bunga, main="Histogram Bunga", xlab="Bunga")
+hist(data.ann$pembayaran.per.bulan, main="Histogram Pembayaran per Bulan", xlab="Pembayaran per Bulan")
+hist(data.ann$banyak.cash.back, main="Histogram Banyak Cashback", xlab="Banyak Cashback")
+```
+
+# Pra-Processing Data
+
+## Normalisasi Data
+
+Proses normalisasi data dilakukan dengan menggunakan fungsi (scale). Normalisasi peubah dilakukan pada seluruh peubah kecuali peubah respon yaitu rating.
+
+```{r}
+data.ann.normal <- as.data.frame(scale(data.ann[,-6]))
+data.ann.normal$rating <- data.ann$rating
+head(data.ann.normal)
+```
+
+## Sebaran Peubah Setelah Normalisasi
+
+```{r}
+par(mfrow=c(3, 3))
+
+hist(data.ann.normal$besar.pinjaman, main="Histogram Besar Pinjaman", xlab="Besar Pinjaman")
+hist(data.ann.normal$lama.pembayaran, main="Histogram Lama Pembayaran", xlab="Lama Pembayaran")
+hist(data.ann.normal$bunga, main="Histogram Bunga", xlab="Bunga")
+hist(data.ann.normal$pembayaran.per.bulan, main="Histogram Pembayaran per Bulan", xlab="Pembayaran per Bulan")
+hist(data.ann.normal$banyak.cash.back, main="Histogram Banyak Cashback", xlab="Banyak Cashback")
+```
+
+Setelah data dinormalisasi, terlihat bahwa peubah lebih menyebar secara normal dibandingkan sebelumnya. Semua peubah penjelas sudah memiliki skala atau satuan yang sama. Normalisasi data juga dilakukan untuk mengurangi bias terhadap respon
+
+# Analisis Neural Network
+
+## Pembagian Data Uji dan Latih
+
+Dataset ann akan dibagi dengan proporsi data uji dan data latih sebesar 70%:30%.
+
+```{r}
+set.seed(033)
+
+train.index <- createDataPartition(data.ann.normal$rating, p = 0.7, list = F)
+train <- data.ann[train.index,]
+test <- data.ann[-train.index,]
+```
+
+Setelah dilakukan pembagian data akan dilakukan proses scalling yang memiliki nilai diantara 0 hingga 1.
+
+## Scalling Nilai Maksimum dan Minimum
+
+Tahap analisis berikutnya adalah proses scalling data. Proses scalling data yang diterapkan adalah normalisasi data dari nilai minimum dan maksimum sehingga nilai data diperoleh dalam rentang 0 hingga 1. Proses penyetelan skala dilakukan melalui fungsi preProcess
+
+```{r}
+preprocessParams <- preProcess(train[,-6], method = c("range"))
+train_X <- as.matrix(predict(preprocessParams, train[,-6]))
+test_X <- as.matrix(predict(preprocessParams, test[,-6]))
+
+train_y <- train[,6]
+test_y <- test[,6]
+```
+
+## Model Neural Network dengan 2 Hidden Layer
+
+Pengaturan model yang akan digunakan adalah menggunakan 2 hidden layer dimana masing-masing layer memiliki 256 neuron. Selain itu, untuk menghindari overfitting, ditambahkan dropout pada masing-masing layer dengan rate=0.3. Adapun untuk output layer menggunakan fungsi aktivasi linear dengan 1 neuron.Selain itu, ditentukan juga fungsi aktivasi yang terkandung dalam setiap layer berupa fungsi aktivasi linear atau relu. Pada analisis ini ditentukan nilai epoch sebesar 500, batch size sebesar 64, dan validation split sebesar 0.2.
+
+Pengaturan lainnya untuk proses kompilasi model yaitu loss menggunakan nilai mean_squared_error, optimizer menggunakan adam serta untuk metrics menggunakan mean_squared_error dan mean_absolute_error.
+
+```{r, results='hide'}
+# Membuat model neural network dengan 2 hidden layer
+model <- keras_model_sequential() %>%
+  layer_dense(units = 256, activation = "relu", input_shape = ncol(train_X)) %>%
+  layer_dropout(0.3) %>%
+  layer_dense(units = 256, activation = "relu") %>%
+  layer_dropout(0.3) %>%
+  layer_dense(units = 1, activation = "linear")
+
+# Mengkompilasi model
+model %>% compile(
+  loss = "mean_squared_error",
+  optimizer = "adam",
+  metrics = list("mean_squared_error", "mean_absolute_error")
+)
+
+# Melakukan tahapan pelatihan model
+history <- model %>% fit(
+  train_X, train_y,
+  shuffle = T,
+  epochs = 500,
+  batch_size = 64,
+  validation_split = 0.2
+)
+```
+
+```{r}
+print(model)
+```
+
+
+```{r}
+# Menampilkan plot pembelajaran model pada setiap epoch
+plot(history)
+```
+
+## Prediksi Model
+
+Selanjutnya dilakukan prediksi nilai respon berdasarkan nilai-nilai peubah penjelas dengan menggunakan fungsi predict pada data uji
+
+```{r}
+prediksi <- predict(model, test_X)
+head(prediksi)
+```
+
+## Evaluasi Model
+
+Evaluasi model dilakukan pada data uji berdasarkan model Neural Network yang didapatkan pada data latih. Proses evaluasi model dilakukan dengan memanfaatkan fungsi evaluate dengan parameter loss, MSE, dan MAE.
+
+```{r}
+# Mengevaluasi model menggunakan data uji
+scores <- model %>% evaluate(test_X, test_y)
+print(scores)
+```
+
+```{r}
+keras_train <- model %>% predict(train_X)
+keras_test <- model %>% predict(test_X)
+
+postResample(keras_train[,1], train$rating) #data latih
+```
+
+```{r}
+postResample(keras_test[,1], test$rating) #data uji
+```
+
+Berdasarkan output diatas dapat dilihat bahwa nilai RMSE yang dihasilkan memiliki nilai RMSE yang cukup kecil dengan R-Squared sekitar 82%.
+
+# Kesimpulan
+
+Berdasarkan hasil analisis yang dilakukan dapat disimpulkan bahwa model Neural Network yang terdiri dari dua hidden layer dan masing-masing terdiri atas 256 neuron dapat dikategorikan sebagai model yang cukup baik dalam memprediksi rating skema pinjaman berdasarkan peubah-peubah penjelas di perusahaan perbankan hal tersebut dapat dilihat dengan nilai RMSE yang cukup kecil dan R-squared yang diperoleh sekitar 82%
