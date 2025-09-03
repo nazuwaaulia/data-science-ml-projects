@@ -1,0 +1,1 @@
+This repository contains R scripts and knitted HTML files from assignments completed in the courses Introduction to Data Science and Machine Learning Techniques. The projects demonstrate fundamental implementations, experiments, and documentation of core concepts in data science and machine learning using R
