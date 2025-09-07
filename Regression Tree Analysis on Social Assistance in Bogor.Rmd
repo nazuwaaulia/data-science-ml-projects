@@ -1,0 +1,88 @@
+---
+title: "Tugas Akhir AED"
+author: "Nazuwa Aulia"
+date: "2023-05-23"
+output: html_document
+---
+```{r}
+library(readxl)
+data <- read_excel("C:/Users/Nazuwa Aulia/OneDrive/Documents/AED/Tugas Akhir/Data AED.xlsx", sheet = "import")
+View(data)
+```
+
+```{r}
+set.seed(4)
+acak <- sample(1:nrow(data), 312)
+data.training <- data[acak,]
+data.testing <- data[-acak,]
+dim(data.training)
+dim(data.testing)
+```
+
+
+```{r}
+set.seed(99)
+acak <- sample(1:nrow(data), 325)
+data.training <- data[acak,]
+data.testing <- data[-acak,]
+dim(data.training)
+dim(data.testing)
+```
+
+```{r}
+set.seed(122)
+acak <- sample(1:nrow(data), 340)
+data.training <- data[acak,]
+data.testing <- data[-acak,]
+dim(data.training)
+dim(data.testing)
+```
+
+```{r}
+set.seed(644)
+acak <- sample(1:nrow(data), 350)
+data.training <- data[acak,]
+data.testing <- data[-acak,]
+dim(data.training)
+dim(data.testing)
+```
+
+```{r}
+data.training$bahan_bakar_utama_memasak <- factor(data.training$bahan_bakar_utama_memasak,
+                                                  levels = c("LPG 3 KG", "LPG >3 KG"))
+
+data.training$sumber_penghasilan_utama <- factor(data.training$sumber_penghasilan_utama,
+                                                 levels = c("INDUSTRI", "PERDAGANGAN/ TRANSPORTASI/ JASA", "PARIWISATA",
+                                                            "PERTANIAN/ PERKEBUNAN/ PETERNAKAN/ PERIKANAN", "LAINNYA"))
+data.training$jalan_utama <- factor(data.training$jalan_utama,
+                                    levels = c("KERIKIL", "ASPAL", "LAINNYA"))
+
+```
+
+```{r}
+library(rpart)
+pohon <- rpart(penerima_bantuan_sosial~ keluarga_miskin +
+                 bahan_bakar_utama_memasak +
+                 sumber_penghasilan_utama +
+                 banyaknya_lansia +
+                 banyaknya_petani +
+                 tidak_memiliki_rumah +
+                 belum_teraliri_listrik +
+                 jalan_utama, 
+               data = data.training, control=rpart.control(minsplit = 80, cp=0))
+pohon
+library(rpart.plot)
+rpart.plot(pohon, box.palette="BuRd")
+```
+
+```{r}
+prediksi <- predict(pohon, newdata = data.testing)
+mse <- mean((prediksi - data.testing$penerima_bantuan_sosial)^2)
+mse
+```
+
+```{r}
+mape <- mean(abs((data.testing$penerima_bantuan_sosial - prediksi) / data.testing$penerima_bantuan_sosial)) * 100
+mape
+```
+

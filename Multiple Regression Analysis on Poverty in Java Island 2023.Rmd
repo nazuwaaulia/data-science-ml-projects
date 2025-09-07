@@ -1,0 +1,264 @@
+---
+title: "Multiple Regression Analysis on Poverty in Java Island"
+author: "Kelompok 4"
+date: "2023-05-08"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+#import data
+```{r}
+library(googlesheets4)
+df <- read_sheet("https://docs.google.com/spreadsheets/d/1NMbcTECbFEUQlRAEx8NpWADuPY3sNoK5eHx3dQu-Jsg/edit#gid=117114602", sheet="import")
+View(df)
+```
+
+#model regresi
+```{r}
+model <- lm(Y~., data=df)
+summary(model)
+```
+
+#pair plot
+```{r}
+library(ggplot2)
+library(GGally)
+ggpairs(df)
+```
+
+#pendeteksian multikolinieritas
+```{r}
+library(car)
+vif(model)
+```
+
+
+#Uji asumsi
+harapan sisaan = 0
+```{r}
+plot(model,1, pch=20)
+
+t.test(model$residuals,mu = 0,conf.level = 0.95)
+```
+
+kehomogenan sisaan
+```{r}
+plot(model,1, pch=20)
+
+library(lmtest)
+bptest(model)
+```
+
+sisaan saling bebas
+```{r}
+plot(x = 1:dim(df)[1],
+     y = model$residuals,
+     type = 'b', 
+     ylab = "Residuals",
+     xlab = "Observation", pch=20)
+
+library(lmtest)
+dwtest(model)
+
+library(randtests)
+runs.test(model$residuals)
+```
+
+sisaan normal
+```{r}
+plot(model,2,pch=20)
+ks.test(model$residuals, "pnorm", mean=mean(model$residuals), sd=sd(model$residuals))
+```
+
+#penanganan kondisi tak terstandar
+wls
+```{r}
+resid_abs <- abs(model$residuals)
+fitted_val <- model$fitted.values
+fit <- lm(resid_abs ~ fitted_val, df)
+data.weights <- 1 / fit$fitted.values^2
+
+#model
+model.lmw <- lm(Y~., 
+                data = df, 
+                weights = data.weights)
+summary(model.lmw)
+```
+
+#Uji asumsi penanganan
+harapan sisaan = 0
+```{r}
+plot(model.lmw,1, pch=20)
+
+t.test(model.lmw$residuals,mu = 0,conf.level = 0.95)
+```
+
+kehomogenan sisaan
+```{r}
+plot(model.lmw,1, pch=20)
+
+library(lmtest)
+bptest(model.lmw)
+```
+
+sisaan saling bebas
+```{r}
+plot(x = 1:dim(df)[1],
+     y = model.lmw$residuals,
+     type = 'b', 
+     ylab = "Residuals",
+     xlab = "Observation", pch=20)
+
+library(randtests)
+runs.test(model.lmw$residuals)
+```
+
+sisaan normal
+```{r}
+plot(model.lmw,2,pch=20)
+ks.test(model.lmw$residuals, "pnorm", mean=mean(model.lmw$residuals), sd=sd(model.lmw$residuals))
+```
+
+#pendeteksian pencilan
+jika > 2
+amatan 106, 79, 4, 94
+```{r}
+sisaan<-residuals(model.lmw)
+stdr.sisaan<-rstandard(model.lmw)
+ri<-abs(stdr.sisaan)
+data.frame(sort(ri, decreasing = TRUE))
+```
+
+#titik leverage
+TRUE : titik leverage
+amatan 6, 9, 36, 39, 71, 73, 77, 79, 80, 117
+```{r}
+hi<-hatvalues(model.lmw, infl = influence(model.lmw))
+ambang_batas<-2*7/119 #2p/n, p=7, n=119
+data.frame(hi, hi>ambang_batas)
+```
+
+#Amatan Berpengaruh
+#Different of Fits (dffits)
+titik di luar garis/pagar -> amatan berpengaruh
+```{r}
+ols_plot_dffits(model.lmw)
+```
+
+#tanpa amatan 94
+```{r}
+library(googlesheets4)
+d.94 <- read_sheet("https://docs.google.com/spreadsheets/d/1NMbcTECbFEUQlRAEx8NpWADuPY3sNoK5eHx3dQu-Jsg/edit#gid=117114602", sheet="tanpa 94")
+model.94 <- lm(Y~., data=d.94)
+summary(model.94)
+```
+
+#model terbaik
+#Stepwise Regression Model
+```{r}
+library(MASS)
+
+step.model <- stepAIC(model.94, direction = "both", trace = F)
+summary(step.model)
+```
+
+
+#Uji asumsi model terbaik
+```{r}
+library(googlesheets4)
+fix <- read_sheet("https://docs.google.com/spreadsheets/d/1NMbcTECbFEUQlRAEx8NpWADuPY3sNoK5eHx3dQu-Jsg/edit#gid=117114602", sheet="model terbaik")
+model.fix <- lm(Y~., data=fix)
+summary(model.fix)
+```
+
+harapan sisaan = 0
+```{r}
+plot(model.fix,1, pch=20)
+
+t.test(model.fix$residuals,mu = 0,conf.level = 0.95)
+```
+
+kehomogenan sisaan
+```{r}
+plot(model.fix,1, pch=20)
+
+library(lmtest)
+bptest(model.fix)
+```
+
+sisaan saling bebas
+```{r}
+plot(x = 1:dim(fix)[1],
+     y = model.fix$residuals,
+     type = 'b', 
+     ylab = "Residuals",
+     xlab = "Observation", pch=20)
+
+library(randtests)
+runs.test(model.fix$residuals)
+```
+
+sisaan normal
+```{r}
+plot(model.fix,2,pch=20)
+ks.test(model.fix$residuals, "pnorm", mean=mean(model.fix$residuals), sd=sd(model.fix$residuals))
+```
+
+#penanganan model terbaik
+wls
+```{r}
+resid_abs <- abs(model.fix$residuals)
+fitted_val <- model.fix$fitted.values
+fit <- lm(resid_abs ~ fitted_val, fix)
+data.weights2 <- 1 / fit$fitted.values^2
+
+#model
+model.fix2 <- lm(Y~., 
+                data = fix, 
+                weights = data.weights2)
+summary(model.fix2)
+summary(model.fix)
+```
+
+#Uji asumsi penanganan model terbaik
+harapan sisaan = 0
+```{r}
+plot(model.fix2,1, pch=20)
+
+t.test(model.fix2$residuals,mu = 0,conf.level = 0.95)
+```
+
+kehomogenan sisaan
+```{r}
+plot(model.fix2,1, pch=20)
+
+library(lmtest)
+bptest(model.fix2)
+```
+
+sisaan saling bebas
+```{r}
+plot(x = 1:dim(fix)[1],
+     y = model.fix2$residuals,
+     type = 'b', 
+     ylab = "Residuals",
+     xlab = "Observation", pch=20)
+
+library(randtests)
+runs.test(model.fix2$residuals)
+```
+
+sisaan normal
+```{r}
+plot(model.fix2,2,pch=20)
+ks.test(model.fix2$residuals, "pnorm", mean=mean(model.fix2$residuals), sd=sd(model.fix2$residuals))
+```
+
+#Uji hipotesis
+```{r}
+anova(model.fix2)
+summary(model.fix2)
+summary(model.fix2)[[9]]
+```
+
