@@ -11,7 +11,8 @@ You can also check my **Python projects** from the *Modeling and Optimization Te
 For more detailed project explanations and my experience, please visit:
 - 🌐 Portfolio: [datascienceportfol.io/nazuwaauliawrk](http://datascienceportfol.io/nazuwaauliawrk)  
 - 📊 RPubs: [rpubs.com/nazuwaaulia24](https://rpubs.com/nazuwaaulia24)  
-- 📄 CV: [bit.ly/cv_nazuwaaulia](https://bit.ly/cv_nazuwaaulia)  
+- 📄 CV: [bit.ly/cv_nazuwaaulia](https://bit.ly/cv_nazuwaaulia)
+- 🏅 **Certifications**: [bit.ly/sertifikat_nazuwaaulia](https://bit.ly/sertifikat_nazuwaaulia)    
 - 🐍 Python Projects (Data Warehousing): [github.com/nazuwaaulia/MSIB-data-warehousing](https://github.com/nazuwaaulia/MSIB-data-warehousing)  
 
 ---
