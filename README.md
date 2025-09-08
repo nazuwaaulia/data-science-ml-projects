@@ -1,6 +1,9 @@
 # Data Science & Machine Learning Projects
 
-This repository contains R scripts and knitted HTML files from assignments completed during my undergraduate studies in **Statistics and Data Science at IPB University**.  These projects serve as part of my academic portfolio, demonstrating fundamental implementations, experiments, and documentation of core concepts in data science and machine learning using R.  
+This repository contains R scripts and knitted HTML files from assignments completed during my undergraduate studies in **Statistics and Data Science at IPB University**.  
+These projects serve as part of my academic portfolio, demonstrating fundamental implementations, experiments, and documentation of core concepts in data science and machine learning using R.  
+
+You can also check my **Python projects** from the *Modeling and Optimization Techniques in Data Warehousing* program here: [github.com/nazuwaaulia/MSIB-data-warehousing](https://github.com/nazuwaaulia/MSIB-data-warehousing).  
 
 ---
 
@@ -9,6 +12,7 @@ For more detailed project explanations and my experience, please visit:
 - 🌐 Portfolio: [datascienceportfol.io/nazuwaauliawrk](http://datascienceportfol.io/nazuwaauliawrk)  
 - 📊 RPubs: [rpubs.com/nazuwaaulia24](https://rpubs.com/nazuwaaulia24)  
 - 📄 CV: [bit.ly/cv_nazuwaaulia](https://bit.ly/cv_nazuwaaulia)  
+- 🐍 Python Projects (Data Warehousing): [github.com/nazuwaaulia/MSIB-data-warehousing](https://github.com/nazuwaaulia/MSIB-data-warehousing)  
 
 ---
 
@@ -32,6 +36,8 @@ Experienced in data analysis projects that enhanced the ability to process, anal
 Recognized as an active and hardworking individual who enjoys collaborating in diverse environments, with particular interest in **data analysis and decision-making based on data**.  
 
 Currently looking for job opportunities that allow continuous growth and development into a professional career.    
+
+---
 
 ## 📬 Contact
 Feel free to connect or contact me via:
